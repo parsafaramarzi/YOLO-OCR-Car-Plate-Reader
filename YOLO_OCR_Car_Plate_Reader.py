@@ -5,17 +5,19 @@ import easyocr
 from PIL import Image
 import numpy as np
 import re
+import csv
 
 reader = easyocr.Reader(['en'] , gpu= True, model_storage_directory= 'import')
 model = YOLO('yolo11n.pt', task = 'detect')
-cap = cv2.VideoCapture('cartraffic01.mp4')
+cap = cv2.VideoCapture('cartraffichd01.mp4')
 writer = imageio.get_writer("output/YOLO_OCR_Car_Plate.mp4", fps=30, codec='libx264', quality=8)
 
 aspect_ratio = cap.get(cv2.CAP_PROP_FRAME_WIDTH) / cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 new_height = 900
 new_width = int(new_height * aspect_ratio)
+demo_height = 720
+demo_width = int(demo_height * aspect_ratio)
 
-plate_numbers = []
 number_of_occurances = {}
 
 def is_valid_plate(concat_number):
@@ -30,6 +32,16 @@ def is_valid_plate(concat_number):
     if pattern_3.match(normalized_plate):
         return True
     return False
+
+def write_plate_records_csv(number_of_occurances):
+    output_filename = 'output/plate_records.csv'
+    header = ['Plate_Number', 'Count_of_Occurrences']
+    
+    with open(output_filename, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(header)
+        for plate, count in number_of_occurances.items():
+            writer.writerow([plate, count])
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -66,14 +78,14 @@ while cap.isOpened():
                         thickness=2
                     )
                     if concat_number != '':
-                        plate_numbers.append(concat_number)
                         if concat_number in number_of_occurances:
                             number_of_occurances[concat_number] += 1
                         else:
                             number_of_occurances[concat_number] = 1
 
+    demo_frame = cv2.resize(frame, (demo_width, demo_height))
+    writer.append_data(cv2.cvtColor(demo_frame, cv2.COLOR_BGR2RGB))
     frame = cv2.resize(frame, (new_width, new_height))
-    writer.append_data(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
     cv2.imshow('Detections', frame)
     if cv2.waitKey(1) == 13 :
@@ -82,8 +94,8 @@ while cap.isOpened():
         cv2.destroyAllWindows()
         break
 
-print("Plate Numbers Detected So Far:", plate_numbers)
 print("Number of Occurrences:", number_of_occurances)
+write_plate_records_csv(number_of_occurances)
 
 cap.release()
 writer.close()

@@ -4,3 +4,5 @@ import/craft_mlt_25k.pth
 import/english_g2.pth
 carplatepersian.ts
 yolo11n.pt
+cartraffichd01.mp4
+output/YOLO_OCR_Car_Plate.mp4
