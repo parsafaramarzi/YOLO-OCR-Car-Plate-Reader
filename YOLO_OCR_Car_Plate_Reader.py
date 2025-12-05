@@ -1,3 +1,4 @@
+import imageio
 import cv2
 from ultralytics import YOLO
 import easyocr
@@ -8,6 +9,7 @@ import re
 reader = easyocr.Reader(['en'] , gpu= True, model_storage_directory= 'import')
 model = YOLO('yolo11n.pt', task = 'detect')
 cap = cv2.VideoCapture('cartraffic01.mp4')
+writer = imageio.get_writer("output/YOLO_OCR_Car_Plate.mp4", fps=30, codec='libx264', quality=8)
 
 aspect_ratio = cap.get(cv2.CAP_PROP_FRAME_WIDTH) / cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 new_height = 900
@@ -71,12 +73,18 @@ while cap.isOpened():
                             number_of_occurances[concat_number] = 1
 
     frame = cv2.resize(frame, (new_width, new_height))
+    writer.append_data(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
     cv2.imshow('Detections', frame)
     if cv2.waitKey(1) == 13 :
+        cap.release()
+        writer.close()
+        cv2.destroyAllWindows()
         break
-    print("Plate Numbers Detected So Far:", plate_numbers)
-    print("Number of Occurrences:", number_of_occurances)
+
+print("Plate Numbers Detected So Far:", plate_numbers)
+print("Number of Occurrences:", number_of_occurances)
 
 cap.release()
+writer.close()
 cv2.destroyAllWindows()
