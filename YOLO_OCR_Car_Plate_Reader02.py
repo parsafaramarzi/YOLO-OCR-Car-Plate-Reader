@@ -5,7 +5,7 @@ from paddleocr import PaddleOCR
 import re
 import csv
 
-ocr_model = PaddleOCR(use_textline_orientation=True, lang='en')
+ocr_model = PaddleOCR(use_textline_orientation=False, lang='en')
 model = YOLO('license-plate-finetune-v1x.pt')
 cap = cv2.VideoCapture('cartraffichd01.mp4')
 writer = imageio.get_writer("output/YOLO_OCR_Car_Plate.mp4", fps=30, codec='libx264', quality=8)
