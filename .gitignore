@@ -14,3 +14,5 @@ output/yolov_plate_passthrough_counter_voted.mp4
 output/yolov_plate_passthrough_counter.mp4
 YOLO_OCR_Car_Plate_Reader.py
 YOLO_OCR_Car_Plate_Reader02.py
+output\YOLO_OCR_Car_Plate02.mp4
+YOLO_OCR_Car_Plate01.mp4
