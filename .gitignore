@@ -9,3 +9,8 @@ output/YOLO_OCR_Car_Plate.mp4
 cartraffic01hd.mp4
 license-plate-finetune-v1x.pt
 output/YOLO_OCR_Car_Plate02hd.mp4
+output/yolov_person_passthrough_counter.mp4
+output/yolov_plate_passthrough_counter_voted.mp4
+output/yolov_plate_passthrough_counter.mp4
+YOLO_OCR_Car_Plate_Reader.py
+YOLO_OCR_Car_Plate_Reader02.py
