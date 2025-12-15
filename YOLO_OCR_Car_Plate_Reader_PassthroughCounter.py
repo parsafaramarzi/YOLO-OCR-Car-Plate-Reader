@@ -181,7 +181,7 @@ while videocapture.isOpened():
             if is_in_target_zone:
                 color = (255, 165, 0)     
             else:
-                color = (255, 0, 0)       
+                color = (255, 0, 0)
 
         if is_in_target_zone:
             counted_current_ids += 1
@@ -190,8 +190,7 @@ while videocapture.isOpened():
             if prev_state == "out":
                 plate_passcount_dict[track_id] = plate_passcount_dict.get(track_id, 0) + 1
             
-            label_plate_text = reconstructed_plate_text if reconstructed_plate_text else "N/A"
-            
+            label_plate_text = reconstructed_plate_text if reconstructed_plate_text else "N/A"   
         else: 
             current_state = "out"
             
