@@ -37,8 +37,6 @@ if success:
     aspect_ratio = frame.shape[1] / frame.shape[0]
     new_height = int(TARGET_WIDTH / aspect_ratio)
     TARGET_SIZE = (TARGET_WIDTH, new_height)
-else:
-    raise IOError(f"Could not open video file at {VIDEO_PATH}")
 
 videocapture.set(cv2.CAP_PROP_POS_FRAMES, 0)
 writer = imageio.get_writer(OUTPUT_VIDEO_PATH, fps=FPS, codec='libx264', quality=8)

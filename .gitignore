@@ -21,3 +21,4 @@ output\plate_records02.csv
 output/plate_records01.csv
 output/plate_records02.csv
 output/YOLO_OCR_Car_Plate02.mp4
+framegenerator.py
