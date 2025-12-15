@@ -27,12 +27,12 @@ Here is an example frame showing the tracking and labeling system in action:
 
 #### Labeling Color Key:
 
-| State | Validity (Stable) | Color | Meaning |
-| :--- | :--- | :--- | :--- |
-| **IN Zone** | **Valid** | 🟢 Green | Vehicle is inside the count zone, stable plate reading is valid. |
-| **IN Zone** | **Invalid** | 🟠 Orange | Vehicle is inside the count zone, stable plate reading is invalid/incomplete. |
-| **OUT Zone** | **Valid** | 🔵 Blue | Vehicle is outside the count zone, stable plate reading is valid. |
-| **OUT Zone** | **Invalid** | 🔴 Red | Vehicle is outside the count zone, stable plate reading is invalid/incomplete. |
+| Status (Plate) | State (Zone) | BGR Value (B, G, R) | Color Name | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| **Valid** | **IN Zone** | `(0, 255, 0)` | Bright Green | Vehicle is inside the zone; plate reading is **stable and valid**. (Best Outcome) |
+| **Valid** | **OUT Zone** | `(0, 100, 255)` | Red-Orange | Vehicle is outside the zone; plate reading is **stable and valid**. (High Red/Low Blue) |
+| **Invalid** | **IN Zone** | `(255, 165, 0)` | Cyan/Aqua | Vehicle is inside the zone; plate reading is **invalid/unknown**. (Warning in count zone) |
+| **Invalid** | **OUT Zone** | `(255, 0, 0)` | Bright Blue | Vehicle is outside the zone; plate reading is **invalid/unknown**. (Worst Outcome - Pure Blue) |
 
 ---
 
