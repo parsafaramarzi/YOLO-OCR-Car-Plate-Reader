@@ -66,6 +66,7 @@ Simply run the main Python script. The script will process the video, display th
 
 ```bash
 python YOLO_OCR_Car_Plate_Reader_PassthroughCounter.py
+```
 
 ### 📁 Output Files
 
