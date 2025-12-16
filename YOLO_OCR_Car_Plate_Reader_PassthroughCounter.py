@@ -6,29 +6,27 @@ import imageio
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
 from paddleocr import PaddleOCR
+from scipy.spatial.distance import cdist
 
 VIDEO_PATH = 'cartraffic.mp4'
-MODEL_PATH = 'license-plate-finetune-v1x.pt'
-OUTPUT_VIDEO_PATH = 'output/yolov_plate_passthrough_counter_voted.mp4'
+SPECIALIZED_MODEL_PATH = 'license-plate-finetune-v1n.pt'
+GENERAL_MODEL_PATH = 'yolo11n.pt'
+OUTPUT_VIDEO_PATH = 'output/yolov_vehicle_plate_passthrough_voted.mp4'
 OUTPUT_CSV_PATH = 'output/plate_records_pass_voted.csv'
 TARGET_WIDTH = 1280
 FPS = 30
 
-def is_valid_plate(normalized_plate):
-    patterns = [
-        re.compile(r'^(0[1-9]|[1-7]\d|8[01])[A-Z]{1}\d{2,5}$'),
-        re.compile(r'^(0[1-9]|[1-7]\d|8[01])[A-Z]{2}\d{2,4}$'),
-        re.compile(r'^(0[1-9]|[1-7]\d|8[01])[A-Z]{3}\d{2,3}$')
-    ]
-    return any(pattern.match(normalized_plate) for pattern in patterns)
+VEHICLE_CLASS_IDS = [2, 5, 7, 6]
 
 ocr_model = PaddleOCR(use_textline_orientation=True, lang='en')
-model = YOLO(MODEL_PATH)
+model = YOLO(SPECIALIZED_MODEL_PATH)
+general_model = YOLO(GENERAL_MODEL_PATH)
 
 track_history = defaultdict(lambda: [])
-plate_passcount_dict = {}         
-plate_position_dict = {}          
+plate_passcount_dict = {}
+plate_position_dict = {}
 track_all_plates_dict = defaultdict(list)
+car_plate_map = {} 
 
 videocapture = cv2.VideoCapture(VIDEO_PATH)
 success, frame = videocapture.read()
@@ -40,6 +38,14 @@ if success:
 
 videocapture.set(cv2.CAP_PROP_POS_FRAMES, 0)
 writer = imageio.get_writer(OUTPUT_VIDEO_PATH, fps=FPS, codec='libx264', quality=8)
+
+def is_valid_plate(normalized_plate):
+    patterns = [
+        re.compile(r'^(0[1-9]|[1-7]\d|8[01])[A-Z]{1}\d{2,5}$'),
+        re.compile(r'^(0[1-9]|[1-7]\d|8[01])[A-Z]{2}\d{2,4}$'),
+        re.compile(r'^(0[1-9]|[1-7]\d|8[01])[A-Z]{3}\d{2,3}$')
+    ]
+    return any(pattern.match(normalized_plate) for pattern in patterns)
 
 def get_processed_plate_info(frame, box, ocr_model):
     def normalize_plate(plate_text):
@@ -92,20 +98,20 @@ def reconstruct_best_plate(plate_list):
     
     return best_plate_string, is_reconstructed_valid
 
-def aggregate_counts_by_plate(plate_passcount_dict, track_all_plates_dict):
-    final_count_dict = defaultdict(int)
-    
-    for track_id, count in plate_passcount_dict.items():
-        best_plate, is_valid = reconstruct_best_plate(track_all_plates_dict[track_id])
-        
-        if is_valid:
-            final_key = best_plate
+def get_status_and_bgr_color(is_valid_reconstructed, is_in_target_zone):
+    if is_valid_reconstructed:
+        status = "Valid"
+        if is_in_target_zone:
+            color = (0, 255, 0)
         else:
-            final_key = f'UNKNOWN_TRACK_{track_id}'
-
-        final_count_dict[final_key] += count
-        
-    return dict(final_count_dict)
+            color = (255, 100, 0)
+    else:
+        status = "Invalid"
+        if is_in_target_zone:
+            color = (0, 100, 255)
+        else:
+            color = (0, 0, 255)
+    return status, color
 
 def write_id_records_csv(plate_count_dict, filename):
     header = ['Plate_Text', 'Count_of_Passes']
@@ -117,105 +123,144 @@ def write_id_records_csv(plate_count_dict, filename):
 
 while videocapture.isOpened():
     success, frame = videocapture.read()
-    
+
     if not success:
         break
-        
+
     H, W = frame.shape[:2]
     target_box_y1 = int(H / 2)
     target_box_y2 = int(H / 2 + H / 10)
     target_box_x1 = int(W / 2 - W / 5 * 2)
     target_box_x2 = int(W / 2 + W / 5 * 2)
     target_zone = (target_box_x1, target_box_y1, target_box_x2, target_box_y2)
-    
-    results = model.track(frame, persist=True, verbose=False)
-    
+
+    plate_results = model.track(frame, persist=True, verbose=False)
+    general_results = general_model.track(frame, persist=True, verbose=False, classes=VEHICLE_CLASS_IDS)
+
     annotator = Annotator(frame, line_width=4)
-    annotator.box_label(target_zone, label='Target Zone', color=(255, 0, 0))
+    annotator.box_label(target_zone, label='Target Zone', color=(0, 0, 0))
+
+    vehicle_detections = []
+    if general_results[0].boxes.id is not None:
+        vehicle_boxes = general_results[0].boxes.xyxy.tolist()
+        vehicle_track_ids = general_results[0].boxes.id.int().tolist()
+        for vh_box, vh_id in zip(vehicle_boxes, vehicle_track_ids):
+            vehicle_detections.append({
+                'id': vh_id,
+                'box': vh_box,
+                'center': ((vh_box[0] + vh_box[2]) / 2, (vh_box[1] + vh_box[3]) / 2)
+            })
     
-    if results[0].boxes.id is None:
-        writer.append_data(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-        cv2.imshow("Input", frame)
-        if cv2.waitKey(1) == 13:
-            break
-        continue
+    plate_detections = []
+    if plate_results[0].boxes.id is not None:
+        plate_boxes = plate_results[0].boxes.xyxy.tolist()
+        plate_track_ids = plate_results[0].boxes.id.int().tolist()
+        for pbox, pid in zip(plate_boxes, plate_track_ids):
+            plate_detections.append({
+                'id': pid,
+                'box': pbox,
+                'center': ((pbox[0] + pbox[2]) / 2, (pbox[1] + pbox[3]) / 2)
+            })
+
+    plate_to_vehicle_map = {}
+    
+    if vehicle_detections and plate_detections:
+        vehicle_centers = [d['center'] for d in vehicle_detections]
+        plate_centers = [d['center'] for d in plate_detections]
+
+        distances = cdist(plate_centers, vehicle_centers)
         
-    boxes = results[0].boxes.xyxy.tolist()
-    track_ids = results[0].boxes.id.int().tolist()
-    
+        min_distance_indices = distances.argmin(axis=1)
+
+        for plate_idx, vehicle_idx in enumerate(min_distance_indices):
+            plate_track_id = plate_detections[plate_idx]['id']
+            vehicle_track_id = vehicle_detections[vehicle_idx]['id']
+            plate_to_vehicle_map[plate_track_id] = vehicle_track_id
+
+    for plate_det in plate_detections:
+        pbox = plate_det['box']
+        plate_track_id = plate_det['id']
+        
+        associated_vehicle_id = plate_to_vehicle_map.get(plate_track_id)
+        
+        if associated_vehicle_id is None:
+             continue
+        
+        _, plate_text_normalized, is_valid_ocr = get_processed_plate_info(frame, pbox, ocr_model)
+        
+        if is_valid_ocr:
+            track_all_plates_dict[associated_vehicle_id].append(plate_text_normalized)
+
     counted_current_ids = 0
+    vehicle_label_info = defaultdict(lambda: {"plate": "N/A", "status": "N/A", "color": (150, 150, 150)})
+    
+    for vehicle_det in vehicle_detections:
+        vehicle_track_id = vehicle_det['id']
+        vehicle_box = vehicle_det['box']
+        midpoint_x = vehicle_det['center'][0]
+        midpoint_y = vehicle_det['center'][1]
 
-    for i, box in enumerate(boxes):
-        if box is None:
-            continue
+        reconstructed_plate_text = "N/A"
+        is_valid_reconstructed = False
+        
+        reconstructed_plate_text, is_valid_reconstructed = reconstruct_best_plate(
+            track_all_plates_dict[vehicle_track_id]
+        )
 
-        x1, y1, x2, y2 = map(int, box) 
-        track_id = track_ids[i]
-        
-        midpoint_x = x1 + (x2 - x1) / 2
-        midpoint_y = y1 + (y2 - y1) / 2
-        
-        track_history[track_id].append((midpoint_x, midpoint_y))
-        
-        plate_text_raw, plate_text_normalized, is_valid_ocr = get_processed_plate_info(frame, box, ocr_model)
-        
-        reconstructed_plate_text, is_valid_reconstructed = reconstruct_best_plate(track_all_plates_dict[track_id])
-
-        prev_state = plate_position_dict.get(track_id, "out")
-        current_state = prev_state
-        
+        prev_state = plate_position_dict.get(vehicle_track_id, "out")
         is_in_target_zone = (midpoint_x > target_box_x1 and midpoint_x < target_box_x2 and
                              midpoint_y > target_box_y1 and midpoint_y < target_box_y2)
 
-        if is_valid_ocr:
-            track_all_plates_dict[track_id].append(plate_text_normalized)
+        status, color = get_status_and_bgr_color(is_valid_reconstructed, is_in_target_zone)
         
-        if is_valid_reconstructed:
-            status = "Valid"
-            if is_in_target_zone:
-                color = (0, 255, 0)       
-            else:
-                color = (0, 100, 255)     
-        else:
-            status = "Invalid"
-            if is_in_target_zone:
-                color = (255, 165, 0)     
-            else:
-                color = (255, 0, 0)
-
         if is_in_target_zone:
             counted_current_ids += 1
             current_state = "in"
             
             if prev_state == "out":
-                plate_passcount_dict[track_id] = plate_passcount_dict.get(track_id, 0) + 1
-            
-            label_plate_text = reconstructed_plate_text if reconstructed_plate_text else "N/A"   
-        else: 
+                plate_passcount_dict[vehicle_track_id] = plate_passcount_dict.get(vehicle_track_id, 0) + 1
+        else:
             current_state = "out"
-            
-            label_plate_text = reconstructed_plate_text
         
-        plate_position_dict[track_id] = current_state
-
-        label_text = f'ID: {track_id} Plate: {label_plate_text} ({status})'
-        annotator.box_label(box, label=label_text, color=color)
+        plate_position_dict[vehicle_track_id] = current_state
+        
+        vehicle_label_info[vehicle_track_id] = {
+            "plate": reconstructed_plate_text, 
+            "status": status, 
+            "color": color
+        }
+        
+        info = vehicle_label_info[vehicle_track_id]
+        label_text = f'ID: {vehicle_track_id} Plate: {info["plate"]} ({info["status"]})'
+        annotator.box_label(vehicle_box, label=label_text, color=info["color"])
 
     count_text = f'Vehicles in Target Zone: {counted_current_ids}'
     maxwidth = len(count_text) * 10
-    
+
     cv2.rectangle(frame, (0, 0), (390 + maxwidth, 75), (50, 50, 50), -1)
     cv2.putText(frame, count_text, org=(30, 50), color=(100, 255, 100), fontScale=1.4, fontFace=cv2.FONT_HERSHEY_SIMPLEX, thickness=2)
 
     frame = cv2.resize(frame, TARGET_SIZE)
-    
+
     writer.append_data(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
     cv2.imshow("Input", frame)
-    
+
     if cv2.waitKey(1) == 13:
         break
 
-final_plate_counts = aggregate_counts_by_plate(plate_passcount_dict, track_all_plates_dict)
+final_count_dict = defaultdict(int)
+
+for vehicle_track_id, count in plate_passcount_dict.items():
+    best_plate, is_valid = reconstruct_best_plate(track_all_plates_dict[vehicle_track_id])
+
+    if is_valid:
+        final_key = best_plate
+    else:
+        final_key = f'UNKNOWN_VEHICLE_TRACK_{vehicle_track_id}' 
+
+    final_count_dict[final_key] += count
+
+final_plate_counts = dict(final_count_dict) 
 
 print(f"Final Aggregated (Voted) Plate Pass Counts: {final_plate_counts}")
 write_id_records_csv(final_plate_counts, OUTPUT_CSV_PATH)
